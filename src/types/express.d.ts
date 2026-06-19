@@ -1,5 +1,3 @@
-import { IUser } from "../models/user.model"; // your user type/interface
-
 declare global {
   namespace Express {
     interface Request {
@@ -8,7 +6,10 @@ declare global {
         fullName: string;
         email: string;
         phone?: string;
+        profileImage?: string;
       };
     }
   }
 }
+
+export {};
