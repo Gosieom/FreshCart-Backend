@@ -14,7 +14,10 @@ const userSchema = new Schema<UserDocument>(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     phone: { type: String },
-    profileImage: { type: String },
+profileImage: {
+  type: String,
+  default: "",
+},
   },
   {
     timestamps: true,

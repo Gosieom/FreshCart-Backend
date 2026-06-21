@@ -7,15 +7,22 @@ export const authMiddleware = async (
   res: Response,
   next: NextFunction
 ) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
   try {
+    const authHeader = req.headers.authorization;
+
+    const tokenFromHeader = authHeader?.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : null;
+
+    const token = req.cookies?.token || tokenFromHeader;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized. No token provided.",
+      });
+    }
+
     const decoded: any = jwt.verify(
       token,
       process.env.JWT_SECRET || "secretkey"
@@ -24,7 +31,10 @@ export const authMiddleware = async (
     const user = await UserModel.findById(decoded.id).select("-password");
 
     if (!user) {
-      return res.status(401).json({ message: "User not found" });
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     req.user = {
@@ -37,6 +47,9 @@ export const authMiddleware = async (
 
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid token" });
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+    });
   }
 };
