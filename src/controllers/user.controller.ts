@@ -3,7 +3,10 @@ import {
   registerUserService,
   loginUserService,
 } from "../services/user.service";
-
+import {
+  sendResetPasswordEmailService,
+  resetPasswordService,
+} from "../services/user.service";
 export const register = async (req: Request, res: Response) => {
   try {
     const user = await registerUserService(req.body);
@@ -55,4 +58,41 @@ export const logout = async (_req: Request, res: Response) => {
     success: true,
     message: "Logout successful",
   });
+};
+
+export const requestPasswordReset = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    await sendResetPasswordEmailService(email);
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset link has been sent to your email.",
+    });
+  } catch (error: any) {
+    return res.status(error.status || error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to send reset email",
+    });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    const { newPassword } = req.body;
+
+    await resetPasswordService(token, newPassword);
+
+    return res.status(200).json({
+      success: true,
+      message: "Password has been reset successfully.",
+    });
+  } catch (error: any) {
+    return res.status(error.status || error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to reset password",
+    });
+  }
 };
