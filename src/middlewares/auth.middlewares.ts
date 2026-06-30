@@ -1,6 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { UserModel } from "../models/user.model";
+import User from "../models/user.model";
+
+type JwtPayloadType = {
+  id?: string;
+  _id?: string;
+  userId?: string;
+};
 
 export const authMiddleware = async (
   req: Request,
@@ -10,11 +16,15 @@ export const authMiddleware = async (
   try {
     const authHeader = req.headers.authorization;
 
-    const tokenFromHeader = authHeader?.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
-      : null;
+    const tokenFromHeader =
+      authHeader && authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : null;
 
-    const token = req.cookies?.token || tokenFromHeader;
+    const tokenFromCookie = req.cookies?.token;
+
+    // Important: Bearer token first, cookie second
+    const token = tokenFromHeader || tokenFromCookie;
 
     if (!token) {
       return res.status(401).json({
@@ -23,12 +33,21 @@ export const authMiddleware = async (
       });
     }
 
-    const decoded: any = jwt.verify(
+    const decoded = jwt.verify(
       token,
-      process.env.JWT_SECRET || "secretkey"
-    );
+      process.env.JWT_SECRET as string
+    ) as JwtPayloadType;
 
-    const user = await UserModel.findById(decoded.id).select("-password");
+    const userId = decoded.id || decoded._id || decoded.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token payload",
+      });
+    }
+
+    const user = await User.findById(userId).select("-password");
 
     if (!user) {
       return res.status(401).json({
@@ -37,12 +56,16 @@ export const authMiddleware = async (
       });
     }
 
-    req.user = {
+    (req as any).user = {
       id: user._id.toString(),
+      _id: user._id.toString(),
       fullName: user.fullName,
+      name: user.name,
       email: user.email,
       phone: user.phone,
       profileImage: user.profileImage,
+      role: user.role,
+      status: user.status,
     };
 
     next();
