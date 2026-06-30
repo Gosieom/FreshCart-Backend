@@ -3,6 +3,7 @@ import cors from "cors";
 import path from "path";
 import cookieParser from "cookie-parser";
 import userRoutes from "./routes/user.route";
+import adminUserRoutes from "./routes/adminUser.route";
 import { errorMiddleware } from "./middlewares/error.middleware";
 
 const app = express();
@@ -33,6 +34,8 @@ app.use("/api/users", userRoutes);
 // new Sprint 3 route for web
 app.use("/api/v1/auth", userRoutes);
 
+// Sprint 4 admin user management route
+app.use("/api/v1/admin/users", adminUserRoutes);
 app.use(errorMiddleware);
 
 export default app;
