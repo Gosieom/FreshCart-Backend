@@ -1,13 +1,23 @@
 import nodemailer from "nodemailer";
-import { EMAIL_PASS, EMAIL_USER } from "./index";
+import {
+  EMAIL_PASS,
+  EMAIL_USER,
+} from "./index";
 
-export const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
-});
+const password = String(
+  process.env.EMAIL_PASSWORD ||
+    EMAIL_PASS ||
+    ""
+).replace(/\s+/g, "");
+
+export const transporter =
+  nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: EMAIL_USER,
+      pass: password,
+    },
+  });
 
 export const sendEmail = async (
   to: string,
@@ -15,11 +25,13 @@ export const sendEmail = async (
   html: string
 ) => {
   const mailOptions = {
-    from: `FreshCart <${EMAIL_USER}>`,
+    from:
+      process.env.EMAIL_FROM ||
+      `FreshCart <${EMAIL_USER}>`,
     to,
     subject,
     html,
   };
 
-  await transporter.sendMail(mailOptions);
+  return transporter.sendMail(mailOptions);
 };
