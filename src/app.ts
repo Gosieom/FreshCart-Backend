@@ -2,17 +2,27 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import cookieParser from "cookie-parser";
+import wishlistRoutes from "./routes/wishlist.route";
+import cartRoutes from "./routes/cart.route";
 import adminDashboardRoutes from "./routes/adminDashboard.route";
 import userRoutes from "./routes/user.route";
 import adminUserRoutes from "./routes/adminUser.route";
 import adminProductRoutes from "./routes/adminProduct.route";
-import { errorMiddleware } from "./middlewares/error.middleware";
 import productRoutes from "./routes/product.route";
 import adminCategoryRoutes from "./routes/adminCategory.route";
 import categoryRoutes from "./routes/category.route";
 import orderRoutes from "./routes/order.route";
 import adminOrderRoutes from "./routes/adminOrder.route";
-
+import addressRoutes from "./routes/address.route";
+import galliMapRoutes from "./routes/galliMap.route";
+import paymentRoutes from "./routes/payment.route";
+import notificationRoutes from "./routes/notification.route";
+import adminBannerRoutes from "./routes/adminBanner.route";
+import bannerRoutes from "./routes/banner.route";
+import adminOfferRoutes from "./routes/adminOffer.route";
+import offerRoutes from "./routes/offer.route";
+import aiGroceryRoutes from "./routes/aiGrocery.route";
+import { errorMiddleware } from "./middlewares/error.middleware";
 
 const app = express();
 
@@ -39,18 +49,31 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // old route for mobile / old frontend
 app.use("/api/users", userRoutes);
 
-// new Sprint 3 route for web
+// web auth route
 app.use("/api/v1/auth", userRoutes);
 
-// Sprint 4 admin user management route
+// admin routes
 app.use("/api/v1/admin/users", adminUserRoutes);
 app.use("/api/v1/admin/dashboard", adminDashboardRoutes);
 app.use("/api/v1/admin/products", adminProductRoutes);
-app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/admin/categories", adminCategoryRoutes);
+app.use("/api/v1/admin/orders", adminOrderRoutes);
+app.use("/api/v1/admin/banners", adminBannerRoutes);
+app.use("/api/v1/admin/offers", adminOfferRoutes);
+
+// user routes
+app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/orders", orderRoutes);
-app.use("/api/v1/admin/orders", adminOrderRoutes);
+app.use("/api/v1/wishlist", wishlistRoutes);
+app.use("/api/v1/cart", cartRoutes);
+app.use("/api/v1/addresses", addressRoutes);
+app.use("/api/v1/maps/galli", galliMapRoutes);
+app.use("/api/v1/payments", paymentRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/banners", bannerRoutes);
+app.use("/api/v1/offers", offerRoutes);
+app.use("/api/v1/ai/grocery-assistant", aiGroceryRoutes);
 
 app.use(errorMiddleware);
 
