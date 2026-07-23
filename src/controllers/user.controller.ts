@@ -2,7 +2,11 @@ import {
   Request,
   Response,
 } from "express";
-
+import {
+  AUTH_COOKIE_NAME,
+  authCookieOptions,
+  clearAuthCookieOptions,
+} from "../utils/auth-cookie.util";
 import {
   changePasswordService,
   completePasswordResetOtpService,
@@ -59,21 +63,11 @@ export const login = async (
         req.body
       );
 
-    res.cookie(
-      "token",
-      token,
-      {
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-        maxAge:
-          1000 *
-          60 *
-          60 *
-          24 *
-          7,
-      }
-    );
+   res.cookie(
+  AUTH_COOKIE_NAME,
+  token,
+  authCookieOptions
+);
 
     return res.status(200).json({
       success: true,
@@ -104,8 +98,10 @@ export const logout = async (
   _req: Request,
   res: Response
 ) => {
-  res.clearCookie("token");
-
+res.clearCookie(
+  AUTH_COOKIE_NAME,
+  clearAuthCookieOptions
+);
   return res.status(200).json({
     success: true,
     message:

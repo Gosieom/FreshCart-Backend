@@ -38,8 +38,29 @@ export const JWT_SECRET = getRequiredEnvironmentVariable(
 
 export const CLIENT_URL = getOptionalEnvironmentVariable(
   "CLIENT_URL",
+  
   "http://localhost:3000"
 ).replace(/\/+$/, "");
+const configuredOrigins = (
+  process.env.CLIENT_URLS ||
+  process.env.CLIENT_URL ||
+  ""
+)
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+const developmentOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+];
+
+export const ALLOWED_ORIGINS = Array.from(
+  new Set([
+    ...configuredOrigins,
+    ...(IS_PRODUCTION ? [] : developmentOrigins),
+  ])
+);
 
 export const EMAIL_USER =
   process.env.EMAIL_USER?.trim() || "";

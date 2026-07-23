@@ -23,13 +23,46 @@ import adminOfferRoutes from "./routes/adminOffer.route";
 import offerRoutes from "./routes/offer.route";
 import aiGroceryRoutes from "./routes/aiGrocery.route";
 import { errorMiddleware } from "./middlewares/error.middleware";
-
+import {
+  ALLOWED_ORIGINS,
+  IS_PRODUCTION,
+} from "./config";
 const app = express();
+
+if (IS_PRODUCTION) {
+  app.set("trust proxy", 1);
+}
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"],
+    origin: (origin, callback) => {
+      // Allow requests without an Origin header, including Postman,
+      // server-to-server requests, health checks, and automated tests.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error(`Origin ${origin} is not allowed by CORS`)
+      );
+    },
     credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   })
 );
 
