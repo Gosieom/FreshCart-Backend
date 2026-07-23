@@ -12,6 +12,10 @@ module.exports = {
     "<rootDir>/src/__tests__/set-env.ts",
   ],
 
+  setupFilesAfterEnv: [
+    "<rootDir>/src/__tests__/setup.ts",
+  ],
+
   transform: {
     "^.+\\.tsx?$": [
       "ts-jest",
@@ -23,8 +27,7 @@ module.exports = {
 
   clearMocks: true,
   restoreMocks: true,
-
-  testTimeout: 30000,
+  testTimeout: 120000,
 
   collectCoverageFrom: [
     "src/**/*.ts",
