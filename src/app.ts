@@ -22,7 +22,10 @@ import bannerRoutes from "./routes/banner.route";
 import adminOfferRoutes from "./routes/adminOffer.route";
 import offerRoutes from "./routes/offer.route";
 import aiGroceryRoutes from "./routes/aiGrocery.route";
-import { errorMiddleware } from "./middlewares/error.middleware";
+import {
+  errorMiddleware,
+  notFoundMiddleware,
+} from "./middlewares/error.middleware";
 import {
   ALLOWED_ORIGINS,
   IS_PRODUCTION,
@@ -108,6 +111,7 @@ app.use("/api/v1/banners", bannerRoutes);
 app.use("/api/v1/offers", offerRoutes);
 app.use("/api/v1/ai/grocery-assistant", aiGroceryRoutes);
 
+app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 export default app;
