@@ -4,16 +4,30 @@ import Product from "../models/product.model";
 
 const formatOfferProduct = (product: any) => {
   const originalPrice = Number(product.price || 0);
-  const discountPercent = Number(product.discountPercent || 0);
+  const discountPercent = Number(
+    product.discountPercent || 0
+  );
+  const isOffer = Boolean(product.isOffer);
 
-  const calculatedOfferPrice = Number(
-    (originalPrice - (originalPrice * discountPercent) / 100).toFixed(2)
+  const calculatedOfferPrice =
+    isOffer && discountPercent > 0
+      ? Number(
+          (
+            originalPrice -
+            (originalPrice * discountPercent) / 100
+          ).toFixed(2)
+        )
+      : 0;
+
+  const storedOfferPrice = Number(
+    product.offerPrice || 0
   );
 
-  const offerPrice =
-    Number(product.offerPrice || 0) > 0
-      ? Number(product.offerPrice)
-      : calculatedOfferPrice;
+  const offerPrice = isOffer
+    ? storedOfferPrice > 0
+      ? storedOfferPrice
+      : calculatedOfferPrice
+    : 0;
 
   return {
     id: product._id.toString(),
@@ -26,12 +40,21 @@ const formatOfferProduct = (product: any) => {
     unit: product.unit,
     image: product.image,
     status: product.status,
-    isOffer: Boolean(product.isOffer),
-    discountPercent,
+    isOffer,
+    discountPercent: isOffer
+      ? discountPercent
+      : 0,
     offerPrice,
-    offerLabel: product.offerLabel || `${discountPercent}% off`,
-    offerStartDate: product.offerStartDate || null,
-    offerEndDate: product.offerEndDate || null,
+    offerLabel: isOffer
+      ? product.offerLabel ||
+        `${discountPercent}% off`
+      : "",
+    offerStartDate: isOffer
+      ? product.offerStartDate || null
+      : null,
+    offerEndDate: isOffer
+      ? product.offerEndDate || null
+      : null,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
   };
