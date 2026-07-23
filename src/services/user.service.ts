@@ -6,8 +6,8 @@ import {
   RegisterUserDto,
   LoginUserDto,
 } from "../dtos/user.dto";
-import { CLIENT_URL, JWT_SECRET } from "../configs";
-import { sendEmail } from "../configs/email";
+import { CLIENT_URL, JWT_SECRET } from "../config";
+import { sendEmail } from "../config/email";
 import { HttpException } from "../exceptions/httpException";
 import PasswordResetOtp from "../models/passwordResetOtp.model";
 import User from "../models/user.model";

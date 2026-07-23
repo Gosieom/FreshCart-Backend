@@ -1,6 +1,6 @@
 import https from "https";
 
-import { esewaConfig } from "../configs/esewa.config";
+import { esewaConfig } from "../config/esewa.config";
 
 export type EsewaStatusResult = {
   productCode: string;

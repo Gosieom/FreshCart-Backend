@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 
-import { esewaConfig } from "../configs/esewa.config";
+import { esewaConfig } from "../config/esewa.config";
 import Cart from "../models/cart.model";
 import Order from "../models/order.model";
 import Product from "../models/product.model";

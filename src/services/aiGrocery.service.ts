@@ -1,4 +1,4 @@
-import { GEMINI_API_KEY, GEMINI_MODEL } from "../configs";
+import { GEMINI_API_KEY, GEMINI_MODEL } from "../config";
 import Product from "../models/product.model";
 import {
   AiCatalogProduct,
