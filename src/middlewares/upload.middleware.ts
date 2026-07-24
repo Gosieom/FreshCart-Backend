@@ -1,44 +1,48 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 
-const profileUploadDir = path.join(process.cwd(), "uploads", "profiles");
+const allowedImageTypes =
+  new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+  ]);
 
-if (!fs.existsSync(profileUploadDir)) {
-  fs.mkdirSync(profileUploadDir, { recursive: true });
-}
+const imageFileFilter:
+  multer.Options["fileFilter"] = (
+    _req,
+    file,
+    callback
+  ) => {
+    if (
+      allowedImageTypes.has(
+        file.mimetype
+      )
+    ) {
+      callback(null, true);
+      return;
+    }
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, profileUploadDir);
-  },
+    callback(
+      new Error(
+        "Only JPEG, PNG, WEBP, and GIF image files are allowed"
+      )
+    );
+  };
 
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `profile-${Date.now()}-${Math.round(
-      Math.random() * 1e9
-    )}${ext}`;
-
-    cb(null, uniqueName);
-  },
-});
-
-const fileFilter = (
-  _req: Express.Request,
-  file: Express.Multer.File,
-  cb: multer.FileFilterCallback
+export const createImageUpload = (
+  maxFileSize: number
 ) => {
-  if (file.mimetype.startsWith("image/")) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only image files are allowed"));
-  }
+  return multer({
+    storage: multer.memoryStorage(),
+    fileFilter: imageFileFilter,
+    limits: {
+      fileSize: maxFileSize,
+    },
+  });
 };
 
-export const profileUpload = multer({
-  storage,
-  fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-  },
-});
+export const profileUpload =
+  createImageUpload(
+    5 * 1024 * 1024
+  );

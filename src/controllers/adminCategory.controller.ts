@@ -2,6 +2,11 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Category from "../models/category.model";
 
+import {
+  deleteStoredImage,
+  uploadImageBuffer,
+} from "../services/imageStorage.service";
+
 const escapeRegex = (value: string) => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
@@ -18,6 +23,32 @@ const formatCategory = (category: any) => {
     updatedAt: category.updatedAt,
   };
 };
+
+const getErrorMessage = (
+  error: unknown,
+  fallback: string
+) => {
+  if (
+    error instanceof Error &&
+    error.message.trim()
+  ) {
+    return error.message;
+  }
+
+  return fallback;
+};
+
+const uploadCategoryImage =
+  async (req: Request) => {
+    if (!req.file) {
+      return "";
+    }
+
+    return uploadImageBuffer(
+      req.file.buffer,
+      "categories"
+    );
+  };
 
 export const getAdminCategories = async (req: Request, res: Response) => {
   try {
@@ -119,137 +150,233 @@ export const getAdminCategoryById = async (req: Request, res: Response) => {
   }
 };
 
-export const createAdminCategory = async (req: Request, res: Response) => {
-  try {
-    const { name, description = "", status = "active" } = req.body;
+export const createAdminCategory = async (
+  req: Request,
+  res: Response
+) => {
+  let uploadedImage = "";
 
-    if (!name || !name.trim()) {
+  try {
+    const {
+      name,
+      description = "",
+      status = "active",
+    } = req.body;
+
+    if (
+      !name ||
+      !String(name).trim()
+    ) {
       return res.status(400).json({
-        message: "Category name is required",
+        message:
+          "Category name is required",
       });
     }
 
-    if (!["active", "inactive"].includes(status)) {
+    if (
+      !["active", "inactive"].includes(
+        status
+      )
+    ) {
       return res.status(400).json({
         message: "Invalid status",
       });
     }
 
-    const existingCategory = await Category.findOne({
-      name: name.trim(),
-    });
+    const normalizedName =
+      String(name).trim();
+
+    const existingCategory =
+      await Category.findOne({
+        name: normalizedName,
+      });
 
     if (existingCategory) {
       return res.status(409).json({
-        message: "Category already exists",
+        message:
+          "Category already exists",
       });
     }
 
-    const image = req.file ? `/uploads/categories/${req.file.filename}` : "";
+    if (req.file) {
+      uploadedImage =
+        await uploadCategoryImage(req);
+    }
 
-    const category = await Category.create({
-      name: name.trim(),
-      description,
-      image,
-      status,
-    });
+    const category =
+      await Category.create({
+        name: normalizedName,
+        description,
+        image: uploadedImage,
+        status,
+      });
 
     return res.status(201).json({
-      message: "Category created successfully",
+      message:
+        "Category created successfully",
       data: formatCategory(category),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (uploadedImage) {
+      await deleteStoredImage(
+        uploadedImage
+      );
+    }
+
     return res.status(500).json({
-      message: error.message || "Failed to create category",
+      message: getErrorMessage(
+        error,
+        "Failed to create category"
+      ),
     });
   }
 };
 
-export const updateAdminCategory = async (req: Request, res: Response) => {
+export const updateAdminCategory = async (
+  req: Request,
+  res: Response
+) => {
+  let uploadedImage = "";
+
   try {
     const { id } = req.params;
-    const { name, description, status } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
+    ) {
       return res.status(400).json({
         message: "Invalid category id",
       });
     }
 
-    const updateData: any = {};
+    const category =
+      await Category.findById(id);
+
+    if (!category) {
+      return res.status(404).json({
+        message: "Category not found",
+      });
+    }
+
+    const {
+      name,
+      description,
+      status,
+    } = req.body;
 
     if (name !== undefined) {
-      if (!name.trim()) {
+      const normalizedName =
+        String(name).trim();
+
+      if (!normalizedName) {
         return res.status(400).json({
-          message: "Category name cannot be empty",
+          message:
+            "Category name cannot be empty",
         });
       }
 
-      const existingCategory = await Category.findOne({
-        name: name.trim(),
-        _id: { $ne: id },
-      });
+      const existingCategory =
+        await Category.findOne({
+          name: normalizedName,
+          _id: { $ne: id },
+        });
 
       if (existingCategory) {
         return res.status(409).json({
-          message: "Category already exists",
+          message:
+            "Category already exists",
         });
       }
 
-      updateData.name = name.trim();
+      category.name =
+        normalizedName;
     }
 
     if (description !== undefined) {
-      updateData.description = description;
+      category.description =
+        description;
     }
 
     if (status !== undefined) {
-      if (!["active", "inactive"].includes(status)) {
+      if (
+        !["active", "inactive"].includes(
+          status
+        )
+      ) {
         return res.status(400).json({
           message: "Invalid status",
         });
       }
 
-      updateData.status = status;
+      category.status = status;
     }
+
+    const previousImage =
+      category.image || "";
 
     if (req.file) {
-      updateData.image = `/uploads/categories/${req.file.filename}`;
+      uploadedImage =
+        await uploadCategoryImage(req);
+
+      category.image =
+        uploadedImage;
     }
 
-    const category = await Category.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    });
+    await category.save();
 
-    if (!category) {
-      return res.status(404).json({
-        message: "Category not found",
-      });
+    if (
+      uploadedImage &&
+      previousImage
+    ) {
+      await deleteStoredImage(
+        previousImage
+      );
     }
 
     return res.status(200).json({
-      message: "Category updated successfully",
+      message:
+        "Category updated successfully",
       data: formatCategory(category),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (uploadedImage) {
+      await deleteStoredImage(
+        uploadedImage
+      );
+    }
+
     return res.status(500).json({
-      message: error.message || "Failed to update category",
+      message: getErrorMessage(
+        error,
+        "Failed to update category"
+      ),
     });
   }
 };
 
-export const deleteAdminCategory = async (req: Request, res: Response) => {
+export const deleteAdminCategory = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
+    ) {
       return res.status(400).json({
         message: "Invalid category id",
       });
     }
 
-    const category = await Category.findByIdAndDelete(id);
+    const category =
+      await Category.findByIdAndDelete(
+        id
+      );
 
     if (!category) {
       return res.status(404).json({
@@ -257,12 +384,22 @@ export const deleteAdminCategory = async (req: Request, res: Response) => {
       });
     }
 
+    if (category.image) {
+      await deleteStoredImage(
+        category.image
+      );
+    }
+
     return res.status(200).json({
-      message: "Category deleted successfully",
+      message:
+        "Category deleted successfully",
     });
-  } catch (error) {
+  } catch (error: unknown) {
     return res.status(500).json({
-      message: "Failed to delete category",
+      message: getErrorMessage(
+        error,
+        "Failed to delete category"
+      ),
     });
   }
 };

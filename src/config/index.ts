@@ -79,3 +79,14 @@ export const GEMINI_API_KEY =
 export const GEMINI_MODEL =
   process.env.GEMINI_MODEL?.trim() ||
   "gemini-3-flash-preview";
+export const CLOUDINARY_CLOUD_NAME =
+  process.env.CLOUDINARY_CLOUD_NAME?.trim() || "";
+
+export const CLOUDINARY_API_KEY =
+  process.env.CLOUDINARY_API_KEY?.trim() || "";
+
+export const CLOUDINARY_API_SECRET =
+  process.env.CLOUDINARY_API_SECRET?.trim() || "";
+
+export const CLOUDINARY_FOLDER =
+  process.env.CLOUDINARY_FOLDER?.trim() || "freshcart";

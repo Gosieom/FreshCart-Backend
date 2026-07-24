@@ -1,10 +1,34 @@
-import fs from "fs";
-import path from "path";
-import { Request, Response } from "express";
+import {
+  Request,
+  Response,
+} from "express";
+
 import mongoose from "mongoose";
+
 import Banner from "../models/banner.model";
 
-const formatBanner = (banner: any) => {
+import {
+  deleteStoredImage,
+  uploadImageBuffer,
+} from "../services/imageStorage.service";
+
+const getErrorMessage = (
+  error: unknown,
+  fallback: string
+) => {
+  if (
+    error instanceof Error &&
+    error.message.trim()
+  ) {
+    return error.message;
+  }
+
+  return fallback;
+};
+
+const formatBanner = (
+  banner: any
+) => {
   return {
     id: banner._id.toString(),
     _id: banner._id.toString(),
@@ -14,7 +38,8 @@ const formatBanner = (banner: any) => {
     position: banner.position,
     buttonText: banner.buttonText,
     link: banner.link,
-    backgroundColor: banner.backgroundColor,
+    backgroundColor:
+      banner.backgroundColor,
     textColor: banner.textColor,
     isActive: banner.isActive,
     sortOrder: banner.sortOrder,
@@ -23,223 +48,370 @@ const formatBanner = (banner: any) => {
   };
 };
 
-const getBannerImagePath = (req: Request) => {
-  const file = (req as any).file as Express.Multer.File | undefined;
-
-  if (!file) return "";
-
-  const relativePath = path
-    .relative(process.cwd(), file.path)
-    .replace(/\\/g, "/");
-
-  return `/${relativePath}`;
-};
-
-const deleteBannerImage = (image?: string) => {
-  try {
-    if (!image || image.startsWith("http")) return;
-
-    const cleanPath = image.replace(/^\/+/, "").replace(/\\/g, "/");
-    const absolutePath = path.join(process.cwd(), cleanPath);
-
-    if (fs.existsSync(absolutePath)) {
-      fs.unlinkSync(absolutePath);
-    }
-  } catch (error) {
-    console.log("DELETE BANNER IMAGE ERROR:", error);
-  }
-};
-
-export const getPublicBanners = async (req: Request, res: Response) => {
-  try {
-    const position =
-      typeof req.query.position === "string" ? req.query.position : "";
-
-    const query: any = {
-      isActive: true,
-    };
-
-    if (position) {
-      query.position = position;
+const uploadBannerImage =
+  async (req: Request) => {
+    if (!req.file) {
+      return "";
     }
 
-    const banners = await Banner.find(query)
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .lean();
+    return uploadImageBuffer(
+      req.file.buffer,
+      "banners"
+    );
+  };
 
-    return res.status(200).json({
-      success: true,
-      data: banners.map(formatBanner),
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to fetch banners",
-    });
-  }
-};
+export const getPublicBanners =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    try {
+      const position =
+        typeof req.query.position ===
+        "string"
+          ? req.query.position
+          : "";
 
-export const getAdminBanners = async (_req: Request, res: Response) => {
-  try {
-    const banners = await Banner.find({})
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .lean();
+      const query: any = {
+        isActive: true,
+      };
 
-    return res.status(200).json({
-      success: true,
-      data: banners.map(formatBanner),
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to fetch banners",
-    });
-  }
-};
+      if (position) {
+        query.position = position;
+      }
 
-export const createAdminBanner = async (req: Request, res: Response) => {
-  try {
-    const {
-      title,
-      subtitle = "",
-      position = "home_hero",
-      buttonText = "Shop now",
-      link = "/user/grocery",
-      backgroundColor = "#0f7f3b",
-      textColor = "#ffffff",
-      isActive = "true",
-      sortOrder = "1",
-    } = req.body;
+      const banners =
+        await Banner.find(query)
+          .sort({
+            sortOrder: 1,
+            createdAt: -1,
+          })
+          .lean();
 
-    if (!title?.trim()) {
-      return res.status(400).json({
+      return res.status(200).json({
+        success: true,
+        data: banners.map(
+          formatBanner
+        ),
+      });
+    } catch (error: unknown) {
+      return res.status(500).json({
         success: false,
-        message: "Banner title is required",
+        message: getErrorMessage(
+          error,
+          "Failed to fetch banners"
+        ),
       });
     }
+  };
 
-    const image = getBannerImagePath(req);
+export const getAdminBanners =
+  async (
+    _req: Request,
+    res: Response
+  ) => {
+    try {
+      const banners =
+        await Banner.find({})
+          .sort({
+            sortOrder: 1,
+            createdAt: -1,
+          })
+          .lean();
 
-    const banner = await Banner.create({
-      title: title.trim(),
-      subtitle,
-      image,
-      position,
-      buttonText,
-      link,
-      backgroundColor,
-      textColor,
-      isActive: String(isActive) === "true",
-      sortOrder: Number(sortOrder) || 1,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Banner created successfully",
-      data: formatBanner(banner),
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to create banner",
-    });
-  }
-};
-
-export const updateAdminBanner = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
+      return res.status(200).json({
+        success: true,
+        data: banners.map(
+          formatBanner
+        ),
+      });
+    } catch (error: unknown) {
+      return res.status(500).json({
         success: false,
-        message: "Invalid banner id",
+        message: getErrorMessage(
+          error,
+          "Failed to fetch banners"
+        ),
       });
     }
+  };
 
-    const banner = await Banner.findById(id);
+export const createAdminBanner =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    let uploadedImage = "";
 
-    if (!banner) {
-      return res.status(404).json({
+    try {
+      const {
+        title,
+        subtitle = "",
+        position = "home_hero",
+        buttonText = "Shop now",
+        link = "/user/grocery",
+        backgroundColor =
+          "#0f7f3b",
+        textColor = "#ffffff",
+        isActive = "true",
+        sortOrder = "1",
+      } = req.body;
+
+      if (
+        !title ||
+        !String(title).trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Banner title is required",
+        });
+      }
+
+      if (req.file) {
+        uploadedImage =
+          await uploadBannerImage(req);
+      }
+
+      const banner =
+        await Banner.create({
+          title:
+            String(title).trim(),
+          subtitle,
+          image: uploadedImage,
+          position,
+          buttonText,
+          link,
+          backgroundColor,
+          textColor,
+          isActive:
+            String(isActive) ===
+            "true",
+          sortOrder:
+            Number(sortOrder) || 1,
+        });
+
+      return res.status(201).json({
+        success: true,
+        message:
+          "Banner created successfully",
+        data: formatBanner(banner),
+      });
+    } catch (error: unknown) {
+      if (uploadedImage) {
+        await deleteStoredImage(
+          uploadedImage
+        );
+      }
+
+      return res.status(500).json({
         success: false,
-        message: "Banner not found",
+        message: getErrorMessage(
+          error,
+          "Failed to create banner"
+        ),
       });
     }
+  };
 
-    const {
-      title,
-      subtitle,
-      position,
-      buttonText,
-      link,
-      backgroundColor,
-      textColor,
-      isActive,
-      sortOrder,
-    } = req.body;
+export const updateAdminBanner =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    let uploadedImage = "";
 
-    const newImage = getBannerImagePath(req);
+    try {
+      const { id } = req.params;
 
-    if (newImage && banner.image) {
-      deleteBannerImage(banner.image);
-    }
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid banner id",
+        });
+      }
 
-    if (title !== undefined) banner.title = title.trim();
-    if (subtitle !== undefined) banner.subtitle = subtitle;
-    if (position !== undefined) banner.position = position;
-    if (buttonText !== undefined) banner.buttonText = buttonText;
-    if (link !== undefined) banner.link = link;
-    if (backgroundColor !== undefined) banner.backgroundColor = backgroundColor;
-    if (textColor !== undefined) banner.textColor = textColor;
-    if (isActive !== undefined) banner.isActive = String(isActive) === "true";
-    if (sortOrder !== undefined) banner.sortOrder = Number(sortOrder) || 1;
-    if (newImage) banner.image = newImage;
+      const banner =
+        await Banner.findById(id);
 
-    await banner.save();
+      if (!banner) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Banner not found",
+        });
+      }
 
-    return res.status(200).json({
-      success: true,
-      message: "Banner updated successfully",
-      data: formatBanner(banner),
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to update banner",
-    });
-  }
-};
+      const {
+        title,
+        subtitle,
+        position,
+        buttonText,
+        link,
+        backgroundColor,
+        textColor,
+        isActive,
+        sortOrder,
+      } = req.body;
 
-export const deleteAdminBanner = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
+      if (title !== undefined) {
+        const normalizedTitle =
+          String(title).trim();
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
+        if (!normalizedTitle) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Banner title cannot be empty",
+          });
+        }
+
+        banner.title =
+          normalizedTitle;
+      }
+
+      if (subtitle !== undefined) {
+        banner.subtitle = subtitle;
+      }
+
+      if (position !== undefined) {
+        banner.position = position;
+      }
+
+      if (buttonText !== undefined) {
+        banner.buttonText =
+          buttonText;
+      }
+
+      if (link !== undefined) {
+        banner.link = link;
+      }
+
+      if (
+        backgroundColor !==
+        undefined
+      ) {
+        banner.backgroundColor =
+          backgroundColor;
+      }
+
+      if (textColor !== undefined) {
+        banner.textColor =
+          textColor;
+      }
+
+      if (isActive !== undefined) {
+        banner.isActive =
+          String(isActive) ===
+          "true";
+      }
+
+      if (sortOrder !== undefined) {
+        banner.sortOrder =
+          Number(sortOrder) || 1;
+      }
+
+      const previousImage =
+        banner.image || "";
+
+      if (req.file) {
+        uploadedImage =
+          await uploadBannerImage(req);
+
+        banner.image =
+          uploadedImage;
+      }
+
+      await banner.save();
+
+      if (
+        uploadedImage &&
+        previousImage
+      ) {
+        await deleteStoredImage(
+          previousImage
+        );
+      }
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Banner updated successfully",
+        data: formatBanner(banner),
+      });
+    } catch (error: unknown) {
+      if (uploadedImage) {
+        await deleteStoredImage(
+          uploadedImage
+        );
+      }
+
+      return res.status(500).json({
         success: false,
-        message: "Invalid banner id",
+        message: getErrorMessage(
+          error,
+          "Failed to update banner"
+        ),
       });
     }
+  };
 
-    const banner = await Banner.findByIdAndDelete(id);
+export const deleteAdminBanner =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    try {
+      const { id } = req.params;
 
-    if (!banner) {
-      return res.status(404).json({
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid banner id",
+        });
+      }
+
+      const banner =
+        await Banner.findByIdAndDelete(
+          id
+        );
+
+      if (!banner) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Banner not found",
+        });
+      }
+
+      if (banner.image) {
+        await deleteStoredImage(
+          banner.image
+        );
+      }
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Banner deleted successfully",
+      });
+    } catch (error: unknown) {
+      return res.status(500).json({
         success: false,
-        message: "Banner not found",
+        message: getErrorMessage(
+          error,
+          "Failed to delete banner"
+        ),
       });
     }
-
-    deleteBannerImage(banner.image);
-
-    return res.status(200).json({
-      success: true,
-      message: "Banner deleted successfully",
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to delete banner",
-    });
-  }
-};
+  };
