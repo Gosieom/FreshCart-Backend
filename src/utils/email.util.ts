@@ -1,7 +1,3 @@
-import nodemailer, {
-  Transporter,
-} from "nodemailer";
-
 export type EmailSendResult = {
   attempted: boolean;
   sent: boolean;
@@ -10,15 +6,22 @@ export type EmailSendResult = {
   error?: string;
 };
 
-type SendEmailPayload = {
+export type SendEmailPayload = {
   to: string;
   subject: string;
   html: string;
 };
 
-let cachedTransporter:
-  | Transporter
-  | null = null;
+type BrevoSendResponse = {
+  messageId?: string;
+  message?: string;
+  code?: string;
+};
+
+const BREVO_EMAIL_URL =
+  "https://api.brevo.com/v3/smtp/email";
+
+const EMAIL_REQUEST_TIMEOUT_MS = 15_000;
 
 const readBoolean = (
   value: string | undefined,
@@ -33,108 +36,64 @@ const readBoolean = (
   );
 };
 
-const cleanAppPassword = (
-  value: string
-): string => {
-  /*
-   * Google displays app passwords in groups.
-   * Removing whitespace prevents copy/paste errors.
-   */
-  return value.replace(/\s+/g, "");
+const getBrevoApiKey = (): string => {
+  return String(
+    process.env.BREVO_API_KEY || ""
+  ).trim();
 };
 
-const getTransporter = (): Transporter => {
-  if (cachedTransporter) {
-    return cachedTransporter;
-  }
-
-  const emailUser = String(
-    process.env.EMAIL_USER || ""
-  ).trim();
-
-  const rawPassword = String(
-    process.env.EMAIL_PASS ||
-      process.env.EMAIL_PASSWORD ||
+const getSenderEmail = (): string => {
+  return String(
+    process.env.BREVO_SENDER_EMAIL ||
+      process.env.EMAIL_USER ||
       ""
-  );
-
-  const emailPass =
-    cleanAppPassword(rawPassword);
-
-  if (!emailUser || !emailPass) {
-    throw new Error(
-      "EMAIL_USER and EMAIL_PASS (or EMAIL_PASSWORD) are required"
-    );
-  }
-
-  const host = String(
-    process.env.EMAIL_HOST || ""
   ).trim();
-
-  if (host) {
-    const port = Number(
-      process.env.EMAIL_PORT || 587
-    );
-
-    const secure = readBoolean(
-      process.env.EMAIL_SECURE,
-      port === 465
-    );
-
-    cachedTransporter =
-      nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: {
-          user: emailUser,
-          pass: emailPass,
-        },
-      });
-  } else {
-    cachedTransporter =
-      nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: emailUser,
-          pass: emailPass,
-        },
-      });
-  }
-
-  return cachedTransporter;
 };
 
-export const isEmailEnabled = () =>
-  readBoolean(
+const getSenderName = (): string => {
+  return String(
+    process.env.BREVO_SENDER_NAME ||
+      "FreshCart"
+  ).trim();
+};
+
+const parseResponseBody = async (
+  response: Response
+): Promise<BrevoSendResponse> => {
+  const contentType =
+    response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as BrevoSendResponse;
+  }
+
+  const text = await response.text();
+
+  return {
+    message: text || "Unknown Brevo response",
+  };
+};
+
+export const isEmailEnabled = (): boolean => {
+  return readBoolean(
     process.env.EMAIL_ENABLED,
     true
   );
+};
 
-export const isEmailConfigured = () => {
-  const emailUser = String(
-    process.env.EMAIL_USER || ""
-  ).trim();
-
-  const emailPass = String(
-    process.env.EMAIL_PASS ||
-      process.env.EMAIL_PASSWORD ||
-      ""
-  ).trim();
-
-  return Boolean(emailUser && emailPass);
+export const isEmailConfigured = (): boolean => {
+  return Boolean(
+    getBrevoApiKey() &&
+      getSenderEmail()
+  );
 };
 
 export const getSafeEmailStatus = () => ({
   enabled: isEmailEnabled(),
   configured: isEmailConfigured(),
-  user: String(
-    process.env.EMAIL_USER || ""
-  ).trim(),
-  host:
-    String(
-      process.env.EMAIL_HOST || "gmail"
-    ).trim() || "gmail",
+  user: getSenderEmail(),
+  host: "api.brevo.com",
+  provider: "brevo",
 });
 
 export const sendEmail = async ({
@@ -158,41 +117,109 @@ export const sendEmail = async ({
       sent: false,
       skipped: true,
       error:
-        "EMAIL_USER and EMAIL_PASS (or EMAIL_PASSWORD) are missing",
+        "BREVO_API_KEY and BREVO_SENDER_EMAIL are required",
     };
   }
 
+  const recipient = String(to || "").trim();
+  const emailSubject = String(
+    subject || ""
+  ).trim();
+
+  if (!recipient) {
+    return {
+      attempted: false,
+      sent: false,
+      skipped: true,
+      error: "Recipient email is required",
+    };
+  }
+
+  if (!emailSubject) {
+    return {
+      attempted: false,
+      sent: false,
+      skipped: true,
+      error: "Email subject is required",
+    };
+  }
+
+  const controller = new AbortController();
+
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, EMAIL_REQUEST_TIMEOUT_MS);
+
   try {
-    const emailUser = String(
-      process.env.EMAIL_USER || ""
-    ).trim();
+    const response = await fetch(
+      BREVO_EMAIL_URL,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "api-key": getBrevoApiKey(),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: {
+            email: getSenderEmail(),
+            name: getSenderName(),
+          },
+          to: [
+            {
+              email: recipient,
+            },
+          ],
+          subject: emailSubject,
+          htmlContent: html,
+        }),
+        signal: controller.signal,
+      }
+    );
 
-    const from = String(
-      process.env.EMAIL_FROM ||
-        `FreshCart <${emailUser}>`
-    ).trim();
+    const responseBody =
+      await parseResponseBody(response);
 
-    const info = await getTransporter().sendMail({
-      from,
-      to,
-      subject,
-      html,
-    });
+    if (!response.ok) {
+      const errorMessage =
+        responseBody.message ||
+        responseBody.code ||
+        `Brevo request failed with status ${response.status}`;
+
+      console.error(
+        "EMAIL SEND ERROR:",
+        errorMessage
+      );
+
+      return {
+        attempted: true,
+        sent: false,
+        skipped: false,
+        error: errorMessage,
+      };
+    }
+
+    const messageId =
+      responseBody.messageId ||
+      "brevo-message-accepted";
 
     console.log(
-      `EMAIL SENT: ${info.messageId} -> ${to}`
+      `EMAIL SENT VIA BREVO: ${messageId} -> ${recipient}`
     );
 
     return {
       attempted: true,
       sent: true,
       skipped: false,
-      messageId: info.messageId,
+      messageId,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const message =
-      error?.message ||
-      "Unknown email delivery error";
+      error instanceof Error
+        ? error.name === "AbortError"
+          ? "Brevo email request timed out"
+          : error.message
+        : "Unknown Brevo email delivery error";
 
     console.error(
       "EMAIL SEND ERROR:",
@@ -205,5 +232,7 @@ export const sendEmail = async ({
       skipped: false,
       error: message,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 };
