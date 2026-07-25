@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
+
 import Order from "../models/order.model";
 import Product from "../models/product.model";
 import User from "../models/user.model";
 import Cart from "../models/cart.model";
 import { createUserNotification } from "../utils/notification.util";
-
 
 const getEffectiveProductPrice = (product: any): number => {
   const regularPrice = Number(product.price ?? 0);
@@ -38,9 +38,10 @@ const getEffectiveProductPrice = (product: any): number => {
     endsOk;
 
   return Number(
-    (hasActiveOffer
-      ? calculatedOfferPrice
-      : regularPrice
+    (
+      hasActiveOffer
+        ? calculatedOfferPrice
+        : regularPrice
     ).toFixed(2)
   );
 };
@@ -51,7 +52,9 @@ const generateOrderNumber = () => {
     .slice(0, 10)
     .replace(/-/g, "");
 
-  const randomPart = Math.floor(1000 + Math.random() * 9000);
+  const randomPart = Math.floor(
+    1000 + Math.random() * 9000
+  );
 
   return `FC-${datePart}-${randomPart}`;
 };
@@ -74,15 +77,21 @@ const formatOrder = (order: any) => {
     paymentStatus: order.paymentStatus,
     orderStatus: order.orderStatus,
     transactionUuid: order.transactionUuid || "",
-    esewaTransactionCode: order.esewaTransactionCode || "",
+    esewaTransactionCode:
+      order.esewaTransactionCode || "",
     notes: order.notes,
-    hiddenFromCustomer: Boolean(order.hiddenFromCustomer),
+    hiddenFromCustomer: Boolean(
+      order.hiddenFromCustomer
+    ),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
 };
 
-export const createOrder = async (req: Request, res: Response) => {
+export const createOrder = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const loggedInUser = (req as any).user;
 
@@ -93,7 +102,12 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
-    const { items, shippingAddress, paymentMethod, notes } = req.body;
+    const {
+      items,
+      shippingAddress,
+      paymentMethod,
+      notes,
+    } = req.body;
 
     const resolvedPaymentMethod =
       paymentMethod || "cash_on_delivery";
@@ -111,7 +125,10 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
+    if (
+      !Array.isArray(items) ||
+      items.length === 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Order items are required",
@@ -127,11 +144,14 @@ export const createOrder = async (req: Request, res: Response) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Complete shipping address is required",
+        message:
+          "Complete shipping address is required",
       });
     }
 
-    const user = await User.findById(loggedInUser.id).select("-password");
+    const user = await User.findById(
+      loggedInUser.id
+    ).select("-password");
 
     if (!user) {
       return res.status(404).json({
@@ -144,24 +164,32 @@ export const createOrder = async (req: Request, res: Response) => {
     let subtotal = 0;
 
     for (const item of items) {
-      const productId = item.product || item.productId;
+      const productId =
+        item.product || item.productId;
+
       const quantity = Number(item.quantity);
 
-      if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+      if (
+        !productId ||
+        !mongoose.Types.ObjectId.isValid(productId)
+      ) {
         return res.status(400).json({
           success: false,
-          message: "Invalid product id in order items",
+          message:
+            "Invalid product id in order items",
         });
       }
 
       if (!quantity || quantity < 1) {
         return res.status(400).json({
           success: false,
-          message: "Quantity must be at least 1",
+          message:
+            "Quantity must be at least 1",
         });
       }
 
-      const product = await Product.findById(productId);
+      const product =
+        await Product.findById(productId);
 
       if (!product) {
         return res.status(404).json({
@@ -205,8 +233,12 @@ export const createOrder = async (req: Request, res: Response) => {
     }
 
     subtotal = Number(subtotal.toFixed(2));
+
     const deliveryFee = subtotal > 0 ? 50 : 0;
-    const totalAmount = Number((subtotal + deliveryFee).toFixed(2));
+
+    const totalAmount = Number(
+      (subtotal + deliveryFee).toFixed(2)
+    );
 
     const order = await Order.create({
       orderNumber: generateOrderNumber(),
@@ -216,15 +248,27 @@ export const createOrder = async (req: Request, res: Response) => {
       customerPhone: user.phone || "",
       items: orderItems,
       shippingAddress: {
-        fullName: String(shippingAddress.fullName).trim(),
-        phone: String(shippingAddress.phone).trim(),
-        address: String(shippingAddress.address).trim(),
-        city: String(shippingAddress.city).trim(),
+        fullName: String(
+          shippingAddress.fullName
+        ).trim(),
+        phone: String(
+          shippingAddress.phone
+        ).trim(),
+        address: String(
+          shippingAddress.address
+        ).trim(),
+        city: String(
+          shippingAddress.city
+        ).trim(),
         province: shippingAddress.province
-          ? String(shippingAddress.province).trim()
+          ? String(
+              shippingAddress.province
+            ).trim()
           : "",
         landmark: shippingAddress.landmark
-          ? String(shippingAddress.landmark).trim()
+          ? String(
+              shippingAddress.landmark
+            ).trim()
           : "",
       },
       subtotal,
@@ -233,16 +277,21 @@ export const createOrder = async (req: Request, res: Response) => {
       paymentMethod: resolvedPaymentMethod,
       paymentStatus: "pending",
       orderStatus: "pending",
-      notes: notes ? String(notes).trim() : "",
+      notes: notes
+        ? String(notes).trim()
+        : "",
       hiddenFromCustomer: false,
     });
 
     for (const item of orderItems) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: {
-          stock: -item.quantity,
-        },
-      });
+      await Product.findByIdAndUpdate(
+        item.product,
+        {
+          $inc: {
+            stock: -item.quantity,
+          },
+        }
+      );
     }
 
     if (
@@ -261,24 +310,51 @@ export const createOrder = async (req: Request, res: Response) => {
       );
     }
 
-    await createUserNotification({
-      userId: user._id.toString(),
-      title: "Order placed successfully",
-      message: `Your order ${order.orderNumber} has been placed successfully. Total amount: Rs. ${order.totalAmount}.`,
-      type: "order",
-      orderId: order._id.toString(),
-      emailSubject: `FreshCart order placed - ${order.orderNumber}`,
-      emailHtml: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2 style="color:#16833a;">Order placed successfully</h2>
-          <p>Hello ${user.fullName || user.email},</p>
-          <p>Your FreshCart order <strong>${order.orderNumber}</strong> has been placed successfully.</p>
-          <p><strong>Total:</strong> Rs. ${order.totalAmount}</p>
-          <p><strong>Payment method:</strong> ${order.paymentMethod}</p>
-          <p>Thank you for shopping with FreshCart.</p>
-        </div>
-      `,
-    });
+    /*
+     * Notification and email delivery must not block the
+     * order API response. The order, stock update and COD
+     * cart clearing have already completed successfully.
+     */
+await createUserNotification({
+  userId: user._id.toString(),
+  title: "Order placed successfully",
+  message: `Your order ${order.orderNumber} has been placed successfully. Total amount: Rs. ${order.totalAmount}.`,
+  type: "order",
+  orderId: order._id.toString(),
+  emailSubject: `FreshCart order placed - ${order.orderNumber}`,
+  emailHtml: `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+      <h2 style="color:#16833a;">
+        Order placed successfully
+      </h2>
+
+      <p>
+        Hello ${user.fullName || user.email},
+      </p>
+
+      <p>
+        Your FreshCart order
+        <strong>${order.orderNumber}</strong>
+        has been placed successfully.
+      </p>
+
+      <p>
+        <strong>Total:</strong>
+        Rs. ${order.totalAmount}
+      </p>
+
+      <p>
+        <strong>Payment method:</strong>
+        ${order.paymentMethod}
+      </p>
+
+      <p>
+        Thank you for shopping with FreshCart.
+      </p>
+    </div>
+  `,
+  waitForEmail: false,
+});
 
     return res.status(201).json({
       success: true,
@@ -290,12 +366,17 @@ export const createOrder = async (req: Request, res: Response) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to place order",
+      message:
+        error.message ||
+        "Failed to place order",
     });
   }
 };
 
-export const getMyOrders = async (req: Request, res: Response) => {
+export const getMyOrders = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const loggedInUser = (req as any).user;
 
@@ -308,9 +389,13 @@ export const getMyOrders = async (req: Request, res: Response) => {
 
     const orders = await Order.find({
       user: loggedInUser.id,
-      hiddenFromCustomer: { $ne: true },
+      hiddenFromCustomer: {
+        $ne: true,
+      },
     })
-      .sort({ createdAt: -1 })
+      .sort({
+        createdAt: -1,
+      })
       .lean();
 
     return res.status(200).json({
@@ -318,16 +403,24 @@ export const getMyOrders = async (req: Request, res: Response) => {
       data: orders.map(formatOrder),
     });
   } catch (error: any) {
-    console.log("GET MY ORDERS ERROR:", error);
+    console.log(
+      "GET MY ORDERS ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch orders",
+      message:
+        error.message ||
+        "Failed to fetch orders",
     });
   }
 };
 
-export const getMyOrderById = async (req: Request, res: Response) => {
+export const getMyOrderById = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const loggedInUser = (req as any).user;
     const { id } = req.params;
@@ -339,7 +432,9 @@ export const getMyOrderById = async (req: Request, res: Response) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid order id",
@@ -363,16 +458,24 @@ export const getMyOrderById = async (req: Request, res: Response) => {
       order: formatOrder(order),
     });
   } catch (error: any) {
-    console.log("GET MY ORDER BY ID ERROR:", error);
+    console.log(
+      "GET MY ORDER BY ID ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch order",
+      message:
+        error.message ||
+        "Failed to fetch order",
     });
   }
 };
 
-export const cancelMyOrder = async (req: Request, res: Response) => {
+export const cancelMyOrder = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const loggedInUser = (req as any).user;
     const { id } = req.params;
@@ -385,26 +488,32 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid order id",
       });
     }
 
-    const cancellationReason = String(reason || "").trim();
+    const cancellationReason = String(
+      reason || ""
+    ).trim();
 
     if (!cancellationReason) {
       return res.status(400).json({
         success: false,
-        message: "Cancellation reason is required",
+        message:
+          "Cancellation reason is required",
       });
     }
 
     if (cancellationReason.length < 5) {
       return res.status(400).json({
         success: false,
-        message: "Cancellation reason must be at least 5 characters",
+        message:
+          "Cancellation reason must be at least 5 characters",
       });
     }
 
@@ -420,15 +529,21 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
       });
     }
 
-    if (order.orderStatus === "cancelled") {
+    if (
+      order.orderStatus === "cancelled"
+    ) {
       return res.status(200).json({
         success: true,
-        message: "Order is already cancelled",
+        message:
+          "Order is already cancelled",
         order: formatOrder(order),
       });
     }
 
-    const cancelableStatuses = ["pending", "confirmed"];
+    const cancelableStatuses = [
+      "pending",
+      "confirmed",
+    ];
 
     if (order.paymentStatus === "paid") {
       return res.status(400).json({
@@ -438,7 +553,11 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
       });
     }
 
-    if (!cancelableStatuses.includes(order.orderStatus)) {
+    if (
+      !cancelableStatuses.includes(
+        order.orderStatus
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -447,14 +566,19 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
     }
 
     for (const item of order.items) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: {
-          stock: item.quantity,
-        },
-      });
+      await Product.findByIdAndUpdate(
+        item.product,
+        {
+          $inc: {
+            stock: item.quantity,
+          },
+        }
+      );
     }
 
-    const cancellationNote = `Cancelled by customer on ${new Date().toLocaleString()}. Reason: ${cancellationReason}`;
+    const cancellationNote =
+      `Cancelled by customer on ${new Date().toLocaleString()}. ` +
+      `Reason: ${cancellationReason}`;
 
     order.orderStatus = "cancelled";
 
@@ -490,7 +614,8 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
       try {
         await createUserNotification({
           userId: admin._id.toString(),
-          title: "Customer cancelled order",
+          title:
+            "Customer cancelled order",
           message: `${order.customerName} cancelled order ${order.orderNumber}. Reason: ${cancellationReason}`,
           type: "order",
           orderId: order._id.toString(),
@@ -506,25 +631,33 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
           `,
         });
       } catch (notificationError) {
-        console.log("ADMIN CANCEL NOTIFICATION ERROR:", notificationError);
+        console.log(
+          "ADMIN CANCEL NOTIFICATION ERROR:",
+          notificationError
+        );
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: "Order cancelled successfully",
+      message:
+        "Order cancelled successfully",
       order: formatOrder(order),
     });
   } catch (error: any) {
-    console.log("CANCEL MY ORDER ERROR:", error);
+    console.log(
+      "CANCEL MY ORDER ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to cancel order",
+      message:
+        error.message ||
+        "Failed to cancel order",
     });
   }
 };
-
 
 export const reorderMyOrder = async (
   req: Request,
@@ -541,7 +674,9 @@ export const reorderMyOrder = async (
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid order id",
@@ -593,13 +728,14 @@ export const reorderMyOrder = async (
       const requestedQuantity = Math.max(
         1,
         Math.floor(
-          Number(previousItem.quantity || 1)
+          Number(
+            previousItem.quantity || 1
+          )
         )
       );
 
-      const product = await Product.findById(
-        productId
-      );
+      const product =
+        await Product.findById(productId);
 
       if (!product) {
         unavailableItems.push({
@@ -608,6 +744,7 @@ export const reorderMyOrder = async (
           reason:
             "This product no longer exists.",
         });
+
         continue;
       }
 
@@ -618,6 +755,7 @@ export const reorderMyOrder = async (
           reason:
             "This product is currently inactive.",
         });
+
         continue;
       }
 
@@ -633,21 +771,26 @@ export const reorderMyOrder = async (
           reason:
             "This product is out of stock.",
         });
+
         continue;
       }
 
-      const existingItem = cart.items.find(
-        (item: any) =>
-          item.product.toString() ===
-          productId
-      );
+      const existingItem =
+        cart.items.find(
+          (item: any) =>
+            item.product.toString() ===
+            productId
+        );
 
-      const existingQuantity = existingItem
-        ? Math.max(
-            0,
-            Number(existingItem.quantity ?? 0)
-          )
-        : 0;
+      const existingQuantity =
+        existingItem
+          ? Math.max(
+              0,
+              Number(
+                existingItem.quantity ?? 0
+              )
+            )
+          : 0;
 
       const remainingStock = Math.max(
         0,
@@ -661,6 +804,7 @@ export const reorderMyOrder = async (
           reason:
             "Your cart already contains the maximum available quantity.",
         });
+
         continue;
       }
 
@@ -671,7 +815,8 @@ export const reorderMyOrder = async (
 
       if (existingItem) {
         existingItem.quantity =
-          existingQuantity + quantityToAdd;
+          existingQuantity +
+          quantityToAdd;
       } else {
         cart.items.push({
           product:
@@ -688,9 +833,12 @@ export const reorderMyOrder = async (
         requestedQuantity,
         addedQuantity: quantityToAdd,
         cartQuantity:
-          existingQuantity + quantityToAdd,
+          existingQuantity +
+          quantityToAdd,
         currentPrice:
-          getEffectiveProductPrice(product),
+          getEffectiveProductPrice(
+            product
+          ),
       });
     }
 
@@ -724,7 +872,10 @@ export const reorderMyOrder = async (
   }
 };
 
-export const clearMyOrderHistory = async (req: Request, res: Response) => {
+export const clearMyOrderHistory = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const loggedInUser = (req as any).user;
 
@@ -748,14 +899,20 @@ export const clearMyOrderHistory = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Order history cleared successfully",
+      message:
+        "Order history cleared successfully",
     });
   } catch (error: any) {
-    console.log("CLEAR MY ORDER HISTORY ERROR:", error);
+    console.log(
+      "CLEAR MY ORDER HISTORY ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to clear order history",
+      message:
+        error.message ||
+        "Failed to clear order history",
     });
   }
 };
