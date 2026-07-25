@@ -12,16 +12,26 @@ export type SendEmailPayload = {
   html: string;
 };
 
-type BrevoSendResponse = {
-  messageId?: string;
-  message?: string;
-  code?: string;
+type GoogleTokenResponse = {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
 };
 
-const BREVO_EMAIL_URL =
-  "https://api.brevo.com/v3/smtp/email";
+type GmailSendResponse = {
+  id?: string;
+  error?: {
+    message?: string;
+  };
+};
 
-const EMAIL_REQUEST_TIMEOUT_MS = 15_000;
+const GOOGLE_TOKEN_URL =
+  "https://oauth2.googleapis.com/token";
+
+const GMAIL_SEND_URL =
+  "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
+
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const readBoolean = (
   value: string | undefined,
@@ -36,64 +46,116 @@ const readBoolean = (
   );
 };
 
-const getBrevoApiKey = (): string => {
-  return String(
-    process.env.BREVO_API_KEY || ""
-  ).trim();
-};
+const getClientId = () =>
+  String(process.env.GMAIL_CLIENT_ID || "").trim();
 
-const getSenderEmail = (): string => {
-  return String(
-    process.env.BREVO_SENDER_EMAIL ||
+const getClientSecret = () =>
+  String(process.env.GMAIL_CLIENT_SECRET || "").trim();
+
+const getRefreshToken = () =>
+  String(process.env.GMAIL_REFRESH_TOKEN || "").trim();
+
+const getSenderEmail = () =>
+  String(
+    process.env.GMAIL_SENDER_EMAIL ||
       process.env.EMAIL_USER ||
       ""
   ).trim();
-};
 
-const getSenderName = (): string => {
-  return String(
-    process.env.BREVO_SENDER_NAME ||
+const getSenderName = () =>
+  String(
+    process.env.GMAIL_SENDER_NAME ||
       "FreshCart"
   ).trim();
+
+const encodeHeader = (value: string): string =>
+  `=?UTF-8?B?${Buffer.from(
+    value,
+    "utf8"
+  ).toString("base64")}?=`;
+
+const toBase64Url = (value: string): string =>
+  Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+const createMimeMessage = ({
+  to,
+  subject,
+  html,
+}: SendEmailPayload): string => {
+  const htmlBase64 = Buffer.from(
+    html,
+    "utf8"
+  ).toString("base64");
+
+  const message = [
+    `From: ${encodeHeader(
+      getSenderName()
+    )} <${getSenderEmail()}>`,
+    `To: ${to}`,
+    `Subject: ${encodeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    htmlBase64,
+  ].join("\r\n");
+
+  return toBase64Url(message);
 };
 
-const parseResponseBody = async (
-  response: Response
-): Promise<BrevoSendResponse> => {
-  const contentType =
-    response.headers.get("content-type") || "";
+const getAccessToken = async (): Promise<string> => {
+  const response = await fetch(
+    GOOGLE_TOKEN_URL,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id: getClientId(),
+        client_secret: getClientSecret(),
+        refresh_token: getRefreshToken(),
+        grant_type: "refresh_token",
+      }),
+    }
+  );
 
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as BrevoSendResponse;
+  const body =
+    (await response.json()) as GoogleTokenResponse;
+
+  if (!response.ok || !body.access_token) {
+    throw new Error(
+      body.error_description ||
+        body.error ||
+        "Failed to obtain Gmail access token"
+    );
   }
 
-  const text = await response.text();
-
-  return {
-    message: text || "Unknown Brevo response",
-  };
+  return body.access_token;
 };
 
-export const isEmailEnabled = (): boolean => {
-  return readBoolean(
-    process.env.EMAIL_ENABLED,
-    true
-  );
-};
+export const isEmailEnabled = (): boolean =>
+  readBoolean(process.env.EMAIL_ENABLED, true);
 
-export const isEmailConfigured = (): boolean => {
-  return Boolean(
-    getBrevoApiKey() &&
+export const isEmailConfigured = (): boolean =>
+  Boolean(
+    getClientId() &&
+      getClientSecret() &&
+      getRefreshToken() &&
       getSenderEmail()
   );
-};
 
 export const getSafeEmailStatus = () => ({
   enabled: isEmailEnabled(),
   configured: isEmailConfigured(),
   user: getSenderEmail(),
-  host: "api.brevo.com",
-  provider: "brevo",
+  host: "gmail.googleapis.com",
+  provider: "gmail-api",
 });
 
 export const sendEmail = async ({
@@ -117,74 +179,58 @@ export const sendEmail = async ({
       sent: false,
       skipped: true,
       error:
-        "BREVO_API_KEY and BREVO_SENDER_EMAIL are required",
+        "GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN and GMAIL_SENDER_EMAIL are required",
     };
   }
 
   const recipient = String(to || "").trim();
-  const emailSubject = String(
-    subject || ""
-  ).trim();
+  const emailSubject = String(subject || "").trim();
 
-  if (!recipient) {
+  if (!recipient || !emailSubject) {
     return {
       attempted: false,
       sent: false,
       skipped: true,
-      error: "Recipient email is required",
-    };
-  }
-
-  if (!emailSubject) {
-    return {
-      attempted: false,
-      sent: false,
-      skipped: true,
-      error: "Email subject is required",
+      error: "Recipient and subject are required",
     };
   }
 
   const controller = new AbortController();
 
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, EMAIL_REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT_MS
+  );
 
   try {
+    const accessToken = await getAccessToken();
+
     const response = await fetch(
-      BREVO_EMAIL_URL,
+      GMAIL_SEND_URL,
       {
         method: "POST",
         headers: {
-          accept: "application/json",
-          "api-key": getBrevoApiKey(),
-          "content-type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          sender: {
-            email: getSenderEmail(),
-            name: getSenderName(),
-          },
-          to: [
-            {
-              email: recipient,
-            },
-          ],
-          subject: emailSubject,
-          htmlContent: html,
+          raw: createMimeMessage({
+            to: recipient,
+            subject: emailSubject,
+            html,
+          }),
         }),
         signal: controller.signal,
       }
     );
 
-    const responseBody =
-      await parseResponseBody(response);
+    const body =
+      (await response.json()) as GmailSendResponse;
 
-    if (!response.ok) {
+    if (!response.ok || !body.id) {
       const errorMessage =
-        responseBody.message ||
-        responseBody.code ||
-        `Brevo request failed with status ${response.status}`;
+        body.error?.message ||
+        `Gmail API request failed with status ${response.status}`;
 
       console.error(
         "EMAIL SEND ERROR:",
@@ -199,32 +245,25 @@ export const sendEmail = async ({
       };
     }
 
-    const messageId =
-      responseBody.messageId ||
-      "brevo-message-accepted";
-
     console.log(
-      `EMAIL SENT VIA BREVO: ${messageId} -> ${recipient}`
+      `EMAIL SENT VIA GMAIL API: ${body.id} -> ${recipient}`
     );
 
     return {
       attempted: true,
       sent: true,
       skipped: false,
-      messageId,
+      messageId: body.id,
     };
   } catch (error: unknown) {
     const message =
       error instanceof Error
         ? error.name === "AbortError"
-          ? "Brevo email request timed out"
+          ? "Gmail API request timed out"
           : error.message
-        : "Unknown Brevo email delivery error";
+        : "Unknown Gmail API delivery error";
 
-    console.error(
-      "EMAIL SEND ERROR:",
-      message
-    );
+    console.error("EMAIL SEND ERROR:", message);
 
     return {
       attempted: true,
