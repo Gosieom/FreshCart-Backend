@@ -7,6 +7,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
+    "test:unit": "jest src/__tests__/unit --runInBand",
+    "test:integration": "jest src/__tests__/integration --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --runInBand",
     "test:typecheck": "tsc -p tsconfig.test.json --noEmit"
