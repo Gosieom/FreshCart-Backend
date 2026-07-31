@@ -104,6 +104,7 @@ export const createOrder = async (
 
     const {
       items,
+      contactInformation,
       shippingAddress,
       paymentMethod,
       notes,
@@ -157,6 +158,49 @@ export const createOrder = async (
       return res.status(404).json({
         success: false,
         message: "User not found",
+      });
+    }
+
+    const customerName = String(
+      contactInformation?.fullName ||
+        shippingAddress.fullName ||
+        user.fullName
+    ).trim();
+
+    const customerEmail = String(
+      contactInformation?.email || user.email
+    )
+      .trim()
+      .toLowerCase();
+
+    const customerPhone = String(
+      contactInformation?.phone ||
+        shippingAddress.phone ||
+        user.phone ||
+        ""
+    ).trim();
+
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!customerName) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer name is required",
+      });
+    }
+
+    if (!emailPattern.test(customerEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid customer email is required",
+      });
+    }
+
+    if (customerPhone.length < 7) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid customer phone number is required",
       });
     }
 
@@ -243,17 +287,13 @@ export const createOrder = async (
     const order = await Order.create({
       orderNumber: generateOrderNumber(),
       user: user._id,
-      customerName: user.fullName,
-      customerEmail: user.email,
-      customerPhone: user.phone || "",
+      customerName,
+      customerEmail,
+      customerPhone,
       items: orderItems,
       shippingAddress: {
-        fullName: String(
-          shippingAddress.fullName
-        ).trim(),
-        phone: String(
-          shippingAddress.phone
-        ).trim(),
+        fullName: customerName,
+        phone: customerPhone,
         address: String(
           shippingAddress.address
         ).trim(),
