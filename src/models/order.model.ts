@@ -1,4 +1,9 @@
-import mongoose, { Document, Schema, Types } from "mongoose";
+import mongoose, {
+  Document,
+  Model,
+  Schema,
+  Types,
+} from "mongoose";
 
 export type OrderStatus =
   | "pending"
@@ -8,9 +13,16 @@ export type OrderStatus =
   | "delivered"
   | "cancelled";
 
-export type PaymentStatus = "pending" | "paid" | "failed" | "refunded";
+export type PaymentStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "refunded";
 
-export type PaymentMethod = "cash_on_delivery" | "online";
+export type PaymentMethod =
+  | "cash_on_delivery"
+  | "esewa"
+  | "online";
 
 export interface IOrderItem {
   product: Types.ObjectId;
@@ -46,107 +58,100 @@ export interface IOrder extends Document {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   orderStatus: OrderStatus;
+  transactionUuid?: string;
+  esewaTransactionCode?: string;
   notes?: string;
+  hiddenFromCustomer: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const orderItemSchema = new Schema<IOrderItem>(
-  {
-    product: {
-      type: Schema.Types.ObjectId,
-      ref: "Product",
-      required: true,
+const orderItemSchema =
+  new Schema<IOrderItem>(
+    {
+      product: {
+        type: Schema.Types.ObjectId,
+        ref: "Product",
+        required: true,
+      },
+      name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      image: {
+        type: String,
+        default: "",
+      },
+      category: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      unit: {
+        type: String,
+        default: "piece",
+        trim: true,
+      },
+      price: {
+        type: Number,
+        required: true,
+        min: 0,
+      },
+      quantity: {
+        type: Number,
+        required: true,
+        min: 1,
+      },
+      total: {
+        type: Number,
+        required: true,
+        min: 0,
+      },
     },
+    {
+      _id: false,
+    }
+  );
 
-    name: {
-      type: String,
-      required: true,
-      trim: true,
+const shippingAddressSchema =
+  new Schema<IShippingAddress>(
+    {
+      fullName: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      phone: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      address: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      city: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      province: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      landmark: {
+        type: String,
+        default: "",
+        trim: true,
+      },
     },
-
-    image: {
-      type: String,
-      default: "",
-    },
-
-    category: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    unit: {
-      type: String,
-      default: "piece",
-      trim: true,
-    },
-
-    price: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1,
-    },
-
-    total: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-  },
-  {
-    _id: false,
-  }
-);
-
-const shippingAddressSchema = new Schema<IShippingAddress>(
-  {
-    fullName: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    phone: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    address: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    city: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    province: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    landmark: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-  },
-  {
-    _id: false,
-  }
-);
+    {
+      _id: false,
+    }
+  );
 
 const orderSchema = new Schema<IOrder>(
   {
@@ -156,79 +161,77 @@ const orderSchema = new Schema<IOrder>(
       unique: true,
       trim: true,
     },
-
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-
     customerName: {
       type: String,
       required: true,
       trim: true,
     },
-
     customerEmail: {
       type: String,
       required: true,
       trim: true,
       lowercase: true,
     },
-
     customerPhone: {
       type: String,
       default: "",
       trim: true,
     },
-
     items: {
       type: [orderItemSchema],
       required: true,
       validate: {
-        validator: function (items: IOrderItem[]) {
-          return items.length > 0;
-        },
-        message: "Order must contain at least one item",
+        validator: (
+          items: IOrderItem[]
+        ) => items.length > 0,
+        message:
+          "Order must contain at least one item",
       },
     },
-
     shippingAddress: {
       type: shippingAddressSchema,
       required: true,
     },
-
     subtotal: {
       type: Number,
       required: true,
       min: 0,
     },
-
     deliveryFee: {
       type: Number,
       required: true,
       min: 0,
       default: 0,
     },
-
     totalAmount: {
       type: Number,
       required: true,
       min: 0,
     },
-
     paymentMethod: {
       type: String,
-      enum: ["cash_on_delivery", "online"],
+      enum: [
+        "cash_on_delivery",
+        "esewa",
+        "online",
+      ],
       default: "cash_on_delivery",
     },
-
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed", "refunded"],
+      enum: [
+        "pending",
+        "paid",
+        "failed",
+        "refunded",
+      ],
       default: "pending",
     },
-
     orderStatus: {
       type: String,
       enum: [
@@ -241,11 +244,24 @@ const orderSchema = new Schema<IOrder>(
       ],
       default: "pending",
     },
-
+    transactionUuid: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    esewaTransactionCode: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     notes: {
       type: String,
       default: "",
       trim: true,
+    },
+    hiddenFromCustomer: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -253,7 +269,11 @@ const orderSchema = new Schema<IOrder>(
   }
 );
 
-const Order =
-  mongoose.models.Order || mongoose.model<IOrder>("Order", orderSchema);
+const Order: Model<IOrder> =
+  (mongoose.models.Order as Model<IOrder>) ||
+  mongoose.model<IOrder>(
+    "Order",
+    orderSchema
+  );
 
 export default Order;

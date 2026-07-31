@@ -7,6 +7,7 @@ declare global {
         email: string;
         phone?: string;
         profileImage?: string;
+        createdAt?: Date;
       };
     }
   }

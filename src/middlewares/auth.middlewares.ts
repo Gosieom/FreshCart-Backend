@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import User from "../models/user.model";
+import { JWT_SECRET } from "../config";
+
 
 type JwtPayloadType = {
   id?: string;
@@ -33,10 +35,10 @@ export const authMiddleware = async (
       });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET as string
-    ) as JwtPayloadType;
+const decoded = jwt.verify(
+  token,
+  JWT_SECRET
+) as JwtPayloadType;
 
     const userId = decoded.id || decoded._id || decoded.userId;
 
@@ -66,6 +68,7 @@ export const authMiddleware = async (
       profileImage: user.profileImage,
       role: user.role,
       status: user.status,
+      createdAt: user.createdAt,
     };
 
     next();

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Order, { OrderStatus, PaymentStatus } from "../models/order.model";
+import { createUserNotification } from "../utils/notification.util";
 
 const escapeRegex = (value: string) => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -22,6 +23,8 @@ const allowedPaymentStatuses: PaymentStatus[] = [
   "refunded",
 ];
 
+const allowedPaymentMethods = ["cash_on_delivery", "online", "esewa"];
+
 const formatOrder = (order: any) => {
   return {
     id: order._id.toString(),
@@ -39,6 +42,8 @@ const formatOrder = (order: any) => {
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
     orderStatus: order.orderStatus,
+    transactionUuid: order.transactionUuid || "",
+    esewaTransactionCode: order.esewaTransactionCode || "",
     notes: order.notes,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -53,55 +58,65 @@ export const getAdminOrders = async (req: Request, res: Response) => {
       typeof req.query.search === "string" ? req.query.search.trim() : "";
     const status =
       typeof req.query.status === "string" ? req.query.status.trim() : "";
+    const paymentStatus =
+      typeof req.query.paymentStatus === "string"
+        ? req.query.paymentStatus.trim()
+        : "";
+    const paymentMethod =
+      typeof req.query.paymentMethod === "string"
+        ? req.query.paymentMethod.trim()
+        : "";
 
     const skip = (page - 1) * limit;
 
     const query: any = {};
 
     if (status && status !== "all") {
+      if (!allowedOrderStatuses.includes(status as OrderStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid order status filter",
+        });
+      }
+
       query.orderStatus = status;
+    }
+
+    if (paymentStatus && paymentStatus !== "all") {
+      if (!allowedPaymentStatuses.includes(paymentStatus as PaymentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid payment status filter",
+        });
+      }
+
+      query.paymentStatus = paymentStatus;
+    }
+
+    if (paymentMethod && paymentMethod !== "all") {
+      if (!allowedPaymentMethods.includes(paymentMethod)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid payment method filter",
+        });
+      }
+
+      query.paymentMethod = paymentMethod;
     }
 
     if (search) {
       const safeSearch = escapeRegex(search);
 
       query.$or = [
-        {
-          orderNumber: {
-            $regex: safeSearch,
-            $options: "i",
-          },
-        },
-        {
-          customerName: {
-            $regex: safeSearch,
-            $options: "i",
-          },
-        },
-        {
-          customerEmail: {
-            $regex: safeSearch,
-            $options: "i",
-          },
-        },
-        {
-          customerPhone: {
-            $regex: safeSearch,
-            $options: "i",
-          },
-        },
-        {
-          orderStatus: {
-            $regex: safeSearch,
-            $options: "i",
-          },
-        },
-        {
-          paymentStatus: {
-            $regex: safeSearch,
-            $options: "i",
-          },
-        },
+        { orderNumber: { $regex: safeSearch, $options: "i" } },
+        { customerName: { $regex: safeSearch, $options: "i" } },
+        { customerEmail: { $regex: safeSearch, $options: "i" } },
+        { customerPhone: { $regex: safeSearch, $options: "i" } },
+        { orderStatus: { $regex: safeSearch, $options: "i" } },
+        { paymentStatus: { $regex: safeSearch, $options: "i" } },
+        { paymentMethod: { $regex: safeSearch, $options: "i" } },
+        { transactionUuid: { $regex: safeSearch, $options: "i" } },
+        { esewaTransactionCode: { $regex: safeSearch, $options: "i" } },
         {
           $expr: {
             $regexMatch: {
@@ -189,6 +204,15 @@ export const updateAdminOrderStatus = async (req: Request, res: Response) => {
       });
     }
 
+    const oldOrder = await Order.findById(id);
+
+    if (!oldOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
     const updateData: any = {};
 
     if (orderStatus !== undefined) {
@@ -216,12 +240,46 @@ export const updateAdminOrderStatus = async (req: Request, res: Response) => {
     const order = await Order.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
-    }).lean();
+    });
 
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
+      });
+    }
+
+    if (orderStatus !== undefined && oldOrder.orderStatus !== orderStatus) {
+      const notificationType =
+        orderStatus === "packed" ||
+        orderStatus === "out_for_delivery" ||
+        orderStatus === "delivered"
+          ? "delivery"
+          : "order";
+
+      await createUserNotification({
+        userId: order.user.toString(),
+        title: "Order status updated",
+        message: `Your order ${order.orderNumber} is now ${String(
+          orderStatus
+        ).replace(/_/g, " ")}.`,
+        type: notificationType,
+        orderId: order._id.toString(),
+        emailSubject: `FreshCart order update - ${order.orderNumber}`,
+      });
+    }
+
+    if (
+      paymentStatus !== undefined &&
+      oldOrder.paymentStatus !== paymentStatus
+    ) {
+      await createUserNotification({
+        userId: order.user.toString(),
+        title: "Payment status updated",
+        message: `Payment status for order ${order.orderNumber} is now ${paymentStatus}.`,
+        type: "payment",
+        orderId: order._id.toString(),
+        emailSubject: `FreshCart payment update - ${order.orderNumber}`,
       });
     }
 
