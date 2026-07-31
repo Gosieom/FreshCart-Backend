@@ -68,6 +68,7 @@ const decoded = jwt.verify(
       profileImage: user.profileImage,
       role: user.role,
       status: user.status,
+      createdAt: user.createdAt,
     };
 
     next();
