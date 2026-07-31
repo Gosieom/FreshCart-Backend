@@ -38,6 +38,7 @@ const safeUserResponse = (
     user.profileImage || "",
   role: user.role,
   status: user.status,
+  createdAt: user.createdAt,
 });
 
 const getUserId = (

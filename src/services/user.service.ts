@@ -101,6 +101,7 @@ export const registerUserService =
         user.profileImage,
       role: user.role,
       status: user.status,
+      createdAt: user.createdAt,
     };
   };
 
@@ -152,6 +153,7 @@ export const loginUserService =
           user.profileImage,
         role: user.role,
         status: user.status,
+        createdAt: user.createdAt,
       },
       token,
     };
