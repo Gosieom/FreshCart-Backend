@@ -126,6 +126,9 @@ export const createOrder = async (
       });
     }
 
+    const isEsewaPayment =
+      resolvedPaymentMethod === "esewa";
+
     if (
       !Array.isArray(items) ||
       items.length === 0
@@ -320,7 +323,9 @@ export const createOrder = async (
       notes: notes
         ? String(notes).trim()
         : "",
-      hiddenFromCustomer: false,
+      // eSewa orders are payment reservations until the
+      // backend verifies a COMPLETE transaction from eSewa.
+      hiddenFromCustomer: isEsewaPayment,
     });
 
     for (const item of orderItems) {
@@ -351,54 +356,59 @@ export const createOrder = async (
     }
 
     /*
-     * Notification and email delivery must not block the
-     * order API response. The order, stock update and COD
-     * cart clearing have already completed successfully.
+     * Do not announce an eSewa order before payment. It is
+     * only a hidden payment reservation at this stage.
+     * The payment controller sends the confirmation after
+     * eSewa returns COMPLETE and the backend verifies it.
      */
-await createUserNotification({
-  userId: user._id.toString(),
-  title: "Order placed successfully",
-  message: `Your order ${order.orderNumber} has been placed successfully. Total amount: Rs. ${order.totalAmount}.`,
-  type: "order",
-  orderId: order._id.toString(),
-  emailSubject: `FreshCart order placed - ${order.orderNumber}`,
-  emailHtml: `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-      <h2 style="color:#16833a;">
-        Order placed successfully
-      </h2>
+    if (!isEsewaPayment) {
+      await createUserNotification({
+        userId: user._id.toString(),
+        title: "Order placed successfully",
+        message: `Your order ${order.orderNumber} has been placed successfully. Total amount: Rs. ${order.totalAmount}.`,
+        type: "order",
+        orderId: order._id.toString(),
+        emailSubject: `FreshCart order placed - ${order.orderNumber}`,
+        emailHtml: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <h2 style="color:#16833a;">
+              Order placed successfully
+            </h2>
 
-      <p>
-        Hello ${user.fullName || user.email},
-      </p>
+            <p>
+              Hello ${user.fullName || user.email},
+            </p>
 
-      <p>
-        Your FreshCart order
-        <strong>${order.orderNumber}</strong>
-        has been placed successfully.
-      </p>
+            <p>
+              Your FreshCart order
+              <strong>${order.orderNumber}</strong>
+              has been placed successfully.
+            </p>
 
-      <p>
-        <strong>Total:</strong>
-        Rs. ${order.totalAmount}
-      </p>
+            <p>
+              <strong>Total:</strong>
+              Rs. ${order.totalAmount}
+            </p>
 
-      <p>
-        <strong>Payment method:</strong>
-        ${order.paymentMethod}
-      </p>
+            <p>
+              <strong>Payment method:</strong>
+              ${order.paymentMethod}
+            </p>
 
-      <p>
-        Thank you for shopping with FreshCart.
-      </p>
-    </div>
-  `,
-  waitForEmail: false,
-});
+            <p>
+              Thank you for shopping with FreshCart.
+            </p>
+          </div>
+        `,
+        waitForEmail: false,
+      });
+    }
 
     return res.status(201).json({
       success: true,
-      message: "Order placed successfully",
+      message: isEsewaPayment
+        ? "eSewa payment is awaiting verification"
+        : "Order placed successfully",
       order: formatOrder(order),
     });
   } catch (error: any) {

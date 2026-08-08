@@ -1,3 +1,5 @@
+import { CLIENT_URL } from "./index";
+
 export type EsewaEnvironment = "test" | "production";
 
 const environment = (process.env.ESEWA_ENVIRONMENT ||
@@ -23,8 +25,11 @@ export const esewaConfig = {
       : "https://rc.esewa.com.np/api/epay/transaction/status/"),
 
   // Flutter intercepts these HTTPS redirects inside its WebView.
+  // Fallback used when the initiation request has no trusted Origin.
+  // Normal browser checkouts dynamically return to the frontend origin
+  // that initiated the payment (localhost or the deployed frontend).
   returnUrl: (
     process.env.ESEWA_RETURN_URL ||
-    "https://freshcart.app/payment/esewa"
+    `${CLIENT_URL}/user/payment/esewa`
   ).replace(/\/$/, ""),
 };

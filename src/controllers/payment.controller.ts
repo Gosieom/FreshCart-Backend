@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 
+import { ALLOWED_ORIGINS } from "../config";
 import { esewaConfig } from "../config/esewa.config";
 import Cart from "../models/cart.model";
 import Order from "../models/order.model";
@@ -48,6 +49,81 @@ const getLoggedInUserId = (req: Request): string => {
 
 const amountsMatch = (first: number, second: number): boolean => {
   return Number.isFinite(first) && Math.abs(first - second) < 0.01;
+};
+
+const normalizeOrigin = (value: string): string => {
+  return value.trim().replace(/\/+$/, "");
+};
+
+const resolveEsewaReturnBaseUrl = (req: Request): string => {
+  const requestOrigin = normalizeOrigin(String(req.get("origin") || ""));
+
+  // Browser checkout requests include an Origin header. Use it only when
+  // the same origin is already trusted by the API CORS configuration.
+  // This keeps localhost payments on localhost and production payments
+  // on the production frontend without introducing an open redirect.
+  if (requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin)) {
+    return `${requestOrigin}/user/payment/esewa`;
+  }
+
+  // Server-to-server clients and requests without Origin keep using the
+  // configured fallback URL.
+  return esewaConfig.returnUrl;
+};
+
+const statusMatchesOrder = (
+  order: any,
+  statusResult: {
+    productCode: string;
+    transactionUuid: string;
+    totalAmount: number;
+  }
+): boolean => {
+  return (
+    statusResult.productCode === esewaConfig.productCode &&
+    statusResult.transactionUuid === order.transactionUuid &&
+    amountsMatch(statusResult.totalAmount, Number(order.totalAmount))
+  );
+};
+
+const finalizeVerifiedEsewaOrder = async (
+  order: any,
+  referenceId: string
+) => {
+  order.paymentStatus = "paid";
+  order.orderStatus = "confirmed";
+  order.hiddenFromCustomer = false;
+  order.esewaTransactionCode = referenceId;
+  await order.save();
+
+  await Cart.findOneAndUpdate(
+    { user: order.user },
+    { $set: { items: [] } },
+    { upsert: true }
+  );
+
+  try {
+    await createUserNotification({
+      userId: order.user.toString(),
+      title: "Order confirmed and eSewa payment verified",
+      message: `Your eSewa payment for order ${order.orderNumber} was verified and the order is now confirmed.`,
+      type: "payment",
+      orderId: order._id.toString(),
+      emailSubject: `FreshCart order confirmed - ${order.orderNumber}`,
+      emailHtml: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+          <h2 style="color:#16833a;">Order confirmed</h2>
+          <p>Your eSewa payment for order <strong>${order.orderNumber}</strong> was verified by FreshCart.</p>
+          <p><strong>Total:</strong> Rs. ${order.totalAmount}</p>
+          <p><strong>eSewa reference:</strong> ${order.esewaTransactionCode}</p>
+        </div>
+      `,
+    });
+  } catch (notificationError) {
+    console.error("ESEWA SUCCESS NOTIFICATION ERROR:", notificationError);
+  }
+
+  return order;
 };
 
 export const initiateEsewaPayment = async (
@@ -110,12 +186,14 @@ export const initiateEsewaPayment = async (
       esewaConfig.productCode
     );
 
-    const successUrl = `${esewaConfig.returnUrl}/success?orderId=${order._id}`;
-    const failureUrl = `${esewaConfig.returnUrl}/failure?orderId=${order._id}`;
+    const returnBaseUrl = resolveEsewaReturnBaseUrl(req);
+    const successUrl = `${returnBaseUrl}/success?orderId=${order._id}`;
+    const failureUrl = `${returnBaseUrl}/failure?orderId=${order._id}`;
 
     order.paymentMethod = "esewa";
     order.paymentStatus = "pending";
     order.orderStatus = "pending";
+    order.hiddenFromCustomer = true;
     order.transactionUuid = transactionUuid;
     order.esewaTransactionCode = "";
     await order.save();
@@ -212,10 +290,7 @@ export const verifyEsewaPayment = async (
       totalAmount: Number(order.totalAmount),
     });
 
-    const detailsMatch =
-      statusResult.productCode === esewaConfig.productCode &&
-      statusResult.transactionUuid === order.transactionUuid &&
-      amountsMatch(statusResult.totalAmount, Number(order.totalAmount));
+    const detailsMatch = statusMatchesOrder(order, statusResult);
 
     if (!detailsMatch) {
       return res.status(400).json({
@@ -233,37 +308,10 @@ export const verifyEsewaPayment = async (
       });
     }
 
-    order.paymentStatus = "paid";
-    order.orderStatus = "confirmed";
-    order.esewaTransactionCode = statusResult.referenceId;
-    await order.save();
-
-    await Cart.findOneAndUpdate(
-      { user: order.user },
-      { $set: { items: [] } },
-      { upsert: true }
+    await finalizeVerifiedEsewaOrder(
+      order,
+      statusResult.referenceId
     );
-
-    try {
-      await createUserNotification({
-        userId: order.user.toString(),
-        title: "eSewa payment successful",
-        message: `Payment for order ${order.orderNumber} was verified successfully.`,
-        type: "payment",
-        orderId: order._id.toString(),
-        emailSubject: `FreshCart payment confirmed - ${order.orderNumber}`,
-        emailHtml: `
-          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2 style="color:#16833a;">Payment confirmed</h2>
-            <p>Your eSewa payment for order <strong>${order.orderNumber}</strong> was verified successfully.</p>
-            <p><strong>Total:</strong> Rs. ${order.totalAmount}</p>
-            <p><strong>Reference:</strong> ${order.esewaTransactionCode}</p>
-          </div>
-        `,
-      });
-    } catch (notificationError) {
-      console.error("ESEWA SUCCESS NOTIFICATION ERROR:", notificationError);
-    }
 
     return res.status(200).json({
       success: true,
@@ -325,6 +373,53 @@ export const markEsewaPaymentFailed = async (
       });
     }
 
+    /*
+     * Re-check eSewa immediately before cancelling. This prevents
+     * a completed payment from being marked failed when the user
+     * closes the WebView during the success redirect.
+     */
+    if (order.paymentMethod === "esewa" && order.transactionUuid) {
+      try {
+        const statusResult = await checkEsewaTransactionStatus({
+          transactionUuid: order.transactionUuid,
+          totalAmount: Number(order.totalAmount),
+        });
+
+        if (!statusMatchesOrder(order, statusResult)) {
+          return res.status(400).json({
+            success: false,
+            message: "eSewa verification details do not match this order",
+            status: statusResult.status,
+          });
+        }
+
+        if (statusResult.status === "COMPLETE") {
+          await finalizeVerifiedEsewaOrder(
+            order,
+            statusResult.referenceId
+          );
+
+          return res.status(200).json({
+            success: true,
+            message:
+              "The payment completed before cancellation and was verified",
+            order: formatOrder(order),
+          });
+        }
+      } catch (statusError: any) {
+        console.error(
+          "ESEWA STATUS CHECK BEFORE CANCELLATION ERROR:",
+          statusError
+        );
+
+        return res.status(503).json({
+          success: false,
+          message:
+            "FreshCart could not confirm the latest eSewa status. Please try again before cancelling.",
+        });
+      }
+    }
+
     // Restore stock only on the first transition to failed/cancelled.
     const shouldRestoreStock =
       order.paymentStatus !== "failed" &&
@@ -340,6 +435,7 @@ export const markEsewaPaymentFailed = async (
 
     order.paymentStatus = "failed";
     order.orderStatus = "cancelled";
+    order.hiddenFromCustomer = true;
 
     if (shouldRestoreStock) {
       const failureNote = `eSewa payment failed/cancelled on ${new Date().toLocaleString()}. Reason: ${reason}`;
