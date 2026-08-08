@@ -2,6 +2,13 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 import User from "../models/user.model";
+import Order from "../models/order.model";
+import Cart from "../models/cart.model";
+import Wishlist from "../models/wishlist.model";
+import Address from "../models/address.model";
+import Notification from "../models/notification.model";
+import NotificationPreference from "../models/notificationPreference.model";
+import PasswordResetOtp from "../models/passwordResetOtp.model";
 
 const escapeRegex = (value: string) => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -332,7 +339,7 @@ export const deleteAdminUser = async (req: Request, res: Response) => {
       });
     }
 
-    const user = await User.findByIdAndDelete(id);
+    const user = await User.findById(id).select("_id");
 
     if (!user) {
       return res.status(404).json({
@@ -340,10 +347,30 @@ export const deleteAdminUser = async (req: Request, res: Response) => {
       });
     }
 
+    const userId = user._id;
+
+    // Delete all records owned by the user before removing the account.
+    // This prevents orphaned orders from continuing to appear in the
+    // administrator order-management screen after the user is deleted.
+    const [orderDeleteResult] = await Promise.all([
+      Order.deleteMany({ user: userId }),
+      Cart.deleteMany({ user: userId }),
+      Wishlist.deleteMany({ user: userId }),
+      Address.deleteMany({ user: userId }),
+      Notification.deleteMany({ user: userId }),
+      NotificationPreference.deleteMany({ user: userId }),
+      PasswordResetOtp.deleteMany({ user: userId }),
+    ]);
+
+    await User.deleteOne({ _id: userId });
+
     return res.status(200).json({
       message: "User deleted successfully",
+      deletedOrders: orderDeleteResult.deletedCount || 0,
     });
   } catch (error) {
+    console.log("DELETE ADMIN USER ERROR:", error);
+
     return res.status(500).json({
       message: "Failed to delete user",
     });
