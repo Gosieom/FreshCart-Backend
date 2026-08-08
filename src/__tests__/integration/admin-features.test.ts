@@ -128,6 +128,50 @@ describe("Admin user management API", () => {
     expect(searchResponse.body.data).toHaveLength(1);
     expect(searchResponse.body.meta.total).toBe(1);
 
+    const product = await Product.create({
+      name: "Cascade Delete Product",
+      description: "Product used to verify user order cleanup",
+      price: 100,
+      category: "Other",
+      stock: 10,
+      unit: "piece",
+      status: "active",
+    });
+
+    await Order.create({
+      orderNumber: "FC-DELETE-USER-0001",
+      user: userId,
+      customerName: "Updated Customer",
+      customerEmail: "created@example.com",
+      customerPhone: "9811111111",
+      items: [
+        {
+          product: product._id,
+          name: product.name,
+          image: "",
+          category: product.category,
+          unit: product.unit,
+          price: 100,
+          quantity: 1,
+          total: 100,
+        },
+      ],
+      shippingAddress: {
+        fullName: "Updated Customer",
+        phone: "9811111111",
+        address: "Kathmandu",
+        city: "Kathmandu",
+      },
+      subtotal: 100,
+      deliveryFee: 50,
+      totalAmount: 150,
+      paymentMethod: "cash_on_delivery",
+      paymentStatus: "pending",
+      orderStatus: "pending",
+    });
+
+    expect(await Order.countDocuments({ user: userId })).toBe(1);
+
     const deleteResponse = await request(app)
       .delete(`/api/v1/admin/users/${userId}`)
       .set(
@@ -138,9 +182,11 @@ describe("Admin user management API", () => {
 
     expect(deleteResponse.body).toMatchObject({
       message: "User deleted successfully",
+      deletedOrders: 1,
     });
 
     expect(await User.findById(userId)).toBeNull();
+    expect(await Order.countDocuments({ user: userId })).toBe(0);
   });
 
   it("rejects duplicate emails and invalid role values", async () => {

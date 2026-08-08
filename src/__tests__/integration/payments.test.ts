@@ -122,6 +122,7 @@ describe("eSewa payment API", () => {
         "Authorization",
         `Bearer ${customer.token}`
       )
+      .set("Origin", "http://localhost:3000")
       .send({
         orderId: order.id,
       })
@@ -138,6 +139,8 @@ describe("eSewa payment API", () => {
       product_code: "EPAYTEST",
       signed_field_names:
         "total_amount,transaction_uuid,product_code",
+      success_url: `http://localhost:3000/user/payment/esewa/success?orderId=${order.id}`,
+      failure_url: `http://localhost:3000/user/payment/esewa/failure?orderId=${order.id}`,
     });
 
     expect(
@@ -147,6 +150,7 @@ describe("eSewa payment API", () => {
     const savedOrder = await Order.findById(order.id);
     expect(savedOrder?.paymentMethod).toBe("esewa");
     expect(savedOrder?.transactionUuid).toBeTruthy();
+    expect(savedOrder?.hiddenFromCustomer).toBe(true);
   });
 
   it("rejects payment initiation for another customer's order", async () => {
@@ -245,6 +249,7 @@ describe("eSewa payment API", () => {
     expect(response.body.order).toMatchObject({
       paymentStatus: "paid",
       orderStatus: "confirmed",
+      hiddenFromCustomer: false,
       esewaTransactionCode: "REF-123",
     });
 
@@ -299,6 +304,56 @@ describe("eSewa payment API", () => {
     );
   });
 
+  it("finalizes a completed payment instead of cancelling it", async () => {
+    const customer = await createCustomer();
+
+    const product = await Product.create({
+      name: "Payment Product",
+      price: 100,
+      category: "Other",
+      stock: 10,
+      unit: "piece",
+      status: "active",
+    });
+
+    const transactionUuid = "TXN-COMPLETE-BEFORE-CANCEL";
+
+    const order = await createOrder({
+      userId: customer.user.id,
+      productId: product.id,
+      paymentMethod: "esewa",
+      transactionUuid,
+    });
+
+    mockedStatusCheck.mockResolvedValue({
+      productCode: "EPAYTEST",
+      transactionUuid,
+      totalAmount: 250,
+      status: "COMPLETE",
+      referenceId: "REF-LATE-SUCCESS",
+      raw: {},
+    });
+
+    const response = await request(app)
+      .post("/api/v1/payments/esewa/failure")
+      .set(
+        "Authorization",
+        `Bearer ${customer.token}`
+      )
+      .send({
+        orderId: order.id,
+        reason: "Customer closed the payment screen",
+      })
+      .expect(200);
+
+    expect(response.body.order).toMatchObject({
+      paymentStatus: "paid",
+      orderStatus: "confirmed",
+      hiddenFromCustomer: false,
+      esewaTransactionCode: "REF-LATE-SUCCESS",
+    });
+  });
+
   it("marks a failed eSewa payment as cancelled and restores stock only once", async () => {
     const customer = await createCustomer();
 
@@ -318,6 +373,15 @@ describe("eSewa payment API", () => {
       transactionUuid: "TXN-FAIL",
     });
 
+    mockedStatusCheck.mockResolvedValue({
+      productCode: "EPAYTEST",
+      transactionUuid: "TXN-FAIL",
+      totalAmount: 250,
+      status: "NOT_FOUND",
+      referenceId: "",
+      raw: {},
+    });
+
     const firstResponse = await request(app)
       .post("/api/v1/payments/esewa/failure")
       .set(
@@ -333,6 +397,7 @@ describe("eSewa payment API", () => {
     expect(firstResponse.body.order).toMatchObject({
       paymentStatus: "failed",
       orderStatus: "cancelled",
+      hiddenFromCustomer: true,
     });
 
     expect(
